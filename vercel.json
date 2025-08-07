@@ -1,5 +1,7 @@
 {
-  "version": 2,
-  "builds": [{ "src": "api/telegram.js", "use": "@vercel/node" }],
-  "routes": [{ "src": "/api/telegram", "dest": "/api/telegram.js" }]
+  "name": "shopstopperbot",
+  "version": "1.0.0",
+  "dependencies": {
+    "node-telegram-bot-api": "^0.61.0"
+  }
 }
