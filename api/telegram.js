@@ -21,10 +21,15 @@ bot.on("message", async (msg) => {
   }
 
   try {
-    await bot.sendMessage(chatId, "Бот работает! Ваше сообщение получено: " + userMessage);
-    console.log("Ответ отправлен!");
+    const res = await bot.sendMessage(chatId, "Бот работает! Ваше сообщение получено: " + userMessage);
+    console.log("Ответ отправлен! Ответ от Telegram:", res);
   } catch (e) {
-    console.error("Ошибка отправки:", e && e.response ? e.response.body : e);
+    // Выводим всю ошибку и тело ответа Telegram
+    if (e.response && e.response.body) {
+      console.error("Ошибка отправки:", e.response.body);
+    } else {
+      console.error("Ошибка отправки:", e);
+    }
   }
 });
 
