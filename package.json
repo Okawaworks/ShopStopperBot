@@ -1,17 +1,13 @@
 {
   "name": "shopstopper-bot",
   "version": "1.0.0",
-  "type": "module",
-  "main": "api/telegram.ts",
+  "main": "api/telegram.js",
   "scripts": {
     "dev": "vercel dev",
-    "start": "node api/telegram.ts"
+    "start": "node api/telegram.js"
   },
   "dependencies": {
     "openai": "^4.29.2",
     "node-fetch": "^3.3.2"
-  },
-  "devDependencies": {
-    "typescript": "^5.3.3"
   }
 }
