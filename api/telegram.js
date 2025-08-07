@@ -1,11 +1,12 @@
-const fetch = require("node-fetch");
-const { OpenAI } = require("openai");
+const { Configuration, OpenAI } = require("openai");
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET;
 
 const sessions = new Map();
+
 
 const personas = {
   strict: "Ты — жёсткий финансовый коуч. Цель: отговорить от покупки без сантиментов. Используй логику, цифры, факты. Будь прямолинеен.",
