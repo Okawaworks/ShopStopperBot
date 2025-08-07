@@ -1,7 +1,6 @@
-import { VercelRequest, VercelResponse } from '@vercel/node'
-import { Configuration, OpenAIApi } from 'openai'
+import OpenAI from "openai"
 
-const openai = new OpenAIApi(new Configuration({ apiKey: process.env.OPENAI_API_KEY }))
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! })
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN!
 const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET!
 
@@ -14,87 +13,94 @@ const personas = {
   wise: "Ты — философ. Помогаешь увидеть бессмысленность желания. Используй парадоксы, образность, наблюдения."
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'POST' || req.query.secret !== WEBHOOK_SECRET) {
-    return res.status(403).send('Forbidden')
+export async function POST(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url)
+    const secret = searchParams.get('secret')
+    if (secret !== WEBHOOK_SECRET) return new Response("Forbidden", { status: 403 })
+
+    const body = await req.json()
+    const message = body?.message?.text
+    const chatId = body?.message?.chat?.id?.toString()
+
+    if (!message || !chatId) return new Response("No message", { status: 200 })
+
+    const command = message.trim().toLowerCase()
+    if (!sessions.has(chatId)) {
+      sessions.set(chatId, { persona: "soft", messages: [], totalSaved: 0, relapses: 0 })
+    }
+
+    const session = sessions.get(chatId)!
+
+    // Команды
+    if (command === '/start') {
+      await sendMessage(chatId, "Привет! Я помогу тебе не делать импульсивные покупки. Напиши, что хочешь купить.")
+      return new Response("ok")
+    }
+
+    if (command === '/done') {
+      session.totalSaved += 1
+      session.messages = []
+      await sendMessage(chatId, "👏 Молодец! Записал — ты удержался от покупки.")
+      return new Response("ok")
+    }
+
+    if (command === '/buy' || command === '/я купил') {
+      session.relapses += 1
+      session.messages = []
+      await sendMessage(chatId, "😔 Понимаю. В следующий раз справимся вместе!")
+      return new Response("ok")
+    }
+
+    if (command === '/persona') {
+      await sendMessage(chatId, "Выбери стиль:\n/strict — строгий\n/soft — мягкий\n/troll — тролль\n/wise — мудрец")
+      return new Response("ok")
+    }
+
+    if (['/strict', '/soft', '/troll', '/wise'].includes(command)) {
+      session.persona = command.replace('/', '')
+      await sendMessage(chatId, `✅ Стиль сменён на: ${session.persona}`)
+      return new Response("ok")
+    }
+
+    if (command === '/stats') {
+      await sendMessage(chatId, `📊 Ты удержался от ${session.totalSaved} покупок\n😅 Но поддался ${session.relapses} раз(а)`)
+      return new Response("ok")
+    }
+
+    // Продолжение диалога
+    const personaPrompt = personas[session.persona]
+    if (session.messages.length === 0) {
+      session.messages.push({ role: 'user', content: `Хочу купить: ${message}` })
+    } else {
+      session.messages.push({ role: 'user', content: message })
+    }
+
+    const fullPrompt = [
+      { role: 'system', content: personaPrompt },
+      ...session.messages
+    ]
+
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: fullPrompt
+    })
+
+    const reply = completion.choices[0].message.content || '🤔 Хм...'
+    session.messages.push({ role: 'assistant', content: reply })
+
+    await sendMessage(chatId, reply)
+    return new Response("ok")
+  } catch (err) {
+    console.error("❌ Ошибка в Telegram handler:", err)
+    return new Response("Internal Server Error", { status: 500 })
   }
-
-  const message = req.body?.message?.text
-  const chatId = req.body?.message?.chat?.id?.toString()
-
-  if (!message || !chatId) return res.status(400).send('Bad Request')
-
-  const command = message.trim().toLowerCase()
-  if (!sessions.has(chatId)) {
-    sessions.set(chatId, { persona: "soft", messages: [], totalSaved: 0, relapses: 0 })
-  }
-
-  const session = sessions.get(chatId)!
-
-  if (command === '/start') {
-    await sendMessage(chatId, "Привет! Я помогу тебе не делать импульсивные покупки. Напиши, что хочешь купить.")
-    return res.status(200).send('ok')
-  }
-
-  if (command === '/done') {
-    session.totalSaved += 1
-    session.messages = []
-    await sendMessage(chatId, "👏 Молодец! Записал — ты удержался от покупки.")
-    return res.status(200).send('ok')
-  }
-
-  if (command === '/buy' || command === '/я купил') {
-    session.relapses += 1
-    session.messages = []
-    await sendMessage(chatId, "😔 Понимаю. В следующий раз справимся вместе!")
-    return res.status(200).send('ok')
-  }
-
-  if (command === '/persona') {
-    await sendMessage(chatId, "Выбери стиль:\n/strict — строгий\n/soft — мягкий\n/troll — тролль\n/wise — мудрец")
-    return res.status(200).send('ok')
-  }
-
-  if (['/strict','/soft','/troll','/wise'].includes(command)) {
-    session.persona = command.replace('/', '')
-    await sendMessage(chatId, `✅ Стиль сменён на: ${session.persona}`)
-    return res.status(200).send('ok')
-  }
-
-  if (command === '/stats') {
-    await sendMessage(chatId, `📊 Ты удержался от ${session.totalSaved} покупок\n😅 Но поддался ${session.relapses} раз(а)`)
-    return res.status(200).send('ok')
-  }
-
-  // продолжение диалога
-  const personaPrompt = personas[session.persona]
-  if (session.messages.length === 0) {
-    session.messages.push({ role: 'user', content: `Хочу купить: ${message}` })
-  } else {
-    session.messages.push({ role: 'user', content: message })
-  }
-
-  const fullPrompt = [
-    { role: 'system', content: personaPrompt },
-    ...session.messages
-  ]
-
-  const completion = await openai.createChatCompletion({
-    model: 'gpt-4o',
-    messages: fullPrompt
-  })
-
-  const reply = completion.data.choices[0].message?.content ?? '🤔 Хм...'
-  session.messages.push({ role: 'assistant', content: reply })
-
-  await sendMessage(chatId, reply)
-  res.status(200).send('ok')
 }
 
 async function sendMessage(chatId: string, text: string) {
   await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text }),
+    body: JSON.stringify({ chat_id: chatId, text })
   })
 }
