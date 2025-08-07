@@ -2,9 +2,8 @@ const TelegramBot = require("node-telegram-bot-api");
 const OpenAI = require("openai");
 
 const botToken = process.env.TELEGRAM_TOKEN;
-const assistantId = process.env.OPENAI_ASSISTANT_ID || "asst_lieJntC1Hf4FxU02SkyMIQSq";
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
+const assistantId = process.env.OPENAI_ASSISTANT_ID || "asst_lieJntC1Hf4FxU02SkyMIQSq";
 const threadMap = new Map();
 
 if (!botToken) {
