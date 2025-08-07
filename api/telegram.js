@@ -1,58 +1,63 @@
-import { Telegraf } from "telegraf";
+import TelegramBot from "node-telegram-bot-api";
 import OpenAI from "openai";
 import dotenv from "dotenv";
 dotenv.config();
 
-const bot = new Telegraf(process.env.BOT_TOKEN);
+const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, { polling: true });
+
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
 const assistantId = "asst_lieJntC1Hf4FxU02SkyMIQSq";
-const userThreads = new Map(); // userId → threadId
+const threadMap = new Map(); // Храним thread_id для каждого пользователя
 
-bot.on("text", async (ctx) => {
-  const userId = ctx.from.id.toString();
-  const message = ctx.message.text;
+bot.on("message", async (msg) => {
+  const chatId = msg.chat.id;
+  const userMessage = msg.text;
 
-  // Получаем или создаём thread для пользователя
-  let threadId = userThreads.get(userId);
-  if (!threadId) {
-    const thread = await openai.beta.threads.create();
-    threadId = thread.id;
-    userThreads.set(userId, threadId);
-  }
+  if (!userMessage) return;
 
-  // Отправляем сообщение в тред
-  await openai.beta.threads.messages.create(threadId, {
-    role: "user",
-    content: message,
-  });
+  try {
+    // Получаем или создаём thread для пользователя
+    let threadId = threadMap.get(chatId);
 
-  // Запускаем ран
-  const run = await openai.beta.threads.runs.create(threadId, {
-    assistant_id: assistantId,
-  });
-
-  // Ждём завершения
-  let runStatus;
-  while (true) {
-    runStatus = await openai.beta.threads.runs.retrieve(threadId, run.id);
-    if (runStatus.status === "completed") break;
-    if (["failed", "cancelled", "expired"].includes(runStatus.status)) {
-      ctx.reply("Ошибка: " + runStatus.status);
-      return;
+    if (!threadId) {
+      const thread = await openai.beta.threads.create();
+      threadId = thread.id;
+      threadMap.set(chatId, threadId);
     }
-    await new Promise((r) => setTimeout(r, 1000));
-  }
 
-  // Получаем и отправляем ответ
-  const messages = await openai.beta.threads.messages.list(threadId);
-  const lastAssistantMessage = messages.data.find((m) => m.role === "assistant");
-  if (lastAssistantMessage) {
-    ctx.reply(lastAssistantMessage.content[0].text.value);
-  } else {
-    ctx.reply("Ассистент не дал ответа.");
+    // Отправляем сообщение в thread
+    await openai.beta.threads.messages.create(threadId, {
+      role: "user",
+      content: userMessage,
+    });
+
+    // Запускаем run
+    const run = await openai.beta.threads.runs.create(threadId, {
+      assistant_id: assistantId,
+    });
+
+    // Ждём завершения run
+    let runStatus;
+    while (true) {
+      runStatus = await openai.beta.threads.runs.retrieve(threadId, run.id);
+      if (runStatus.status === "completed") break;
+      if (runStatus.status === "failed") {
+        throw new Error("Run failed.");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+
+    // Получаем ответ
+    const messages = await openai.beta.threads.messages.list(threadId);
+    const lastMessage = messages.data.find((msg) => msg.role === "assistant");
+
+    if (lastMessage) {
+      await bot.sendMessage(chatId, lastMessage.content[0].text.value);
+    } else {
+      await bot.sendMessage(chatId, "❌ Ошибка: ассистент не ответил.");
+    }
+  } catch (error) {
+    console.error("Ошибка:", error);
+    await bot.sendMessage(chatId, "⚠️ Возникла ошибка. Попробуйте позже.");
   }
 });
-
-bot.launch();
-console.log("Bot is running!");
