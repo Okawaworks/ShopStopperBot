@@ -24,7 +24,7 @@ bot.on("message", async (msg) => {
     await bot.sendMessage(chatId, "Бот работает! Ваше сообщение получено: " + userMessage);
     console.log("Ответ отправлен!");
   } catch (e) {
-    console.error("Ошибка отправки:", e);
+    console.error("Ошибка отправки:", e && e.response ? e.response.body : e);
   }
 });
 
