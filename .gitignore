@@ -1,0 +1,13 @@
+# Отключаем конфиденциальные и временные файлы
+
+.env
+.env.local
+.env.*.local
+
+# Системные файлы
+.DS_Store
+node_modules
+*.log
+
+# Vercel preview data
+.vercel
