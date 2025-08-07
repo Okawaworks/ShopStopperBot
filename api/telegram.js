@@ -1,130 +1,121 @@
-const { OpenAI } = require("openai");
-const fetch = (...args) => import("node-fetch").then(({ default: fetch }) => fetch(...args));
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args))
+const { OpenAI } = require("openai")
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET;
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN
+const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET
 
-const sessions = new Map();
+const sessions = new Map()
 
 const personas = {
-  strict: "Ты — жёсткий финансовый коуч. Говори твёрдо. Без пощады. Используй фразы вроде 'Очнись', 'Хватит тратить', 'Это ловушка маркетинга'.",
-  soft: "Ты — добрый друг. Помоги человеку разобраться в себе. Используй эмпатичные фразы и поддержку, но не поддакивай.",
-  troll: "Ты — дерзкий тролль. Сарказм, насмешки, добрые подколы. Высмеивай желание купить с юмором.",
-  wise: "Ты — дзен-философ. Помоги увидеть бессмысленность потребления. Говори метафорами и парадоксами."
-};
+  strict: "Ты — жёсткий финансовый коуч. Цель: отговорить от покупки без сантиментов. Используй логику, цифры, факты. Будь прямолинеен.",
+  soft: "Ты — заботливый, мягкий друг. Помогаешь понять истинные причины желания купить вещь. Акцент на эмоциях и потребностях. Будь добр, но честен.",
+  troll: "Ты — дерзкий, язвительный тролль, но с сердцем. Твоя цель — высмеять импульсивную покупку. Шути, поддразни, стебись.",
+  wise: "Ты — философ. Помогаешь увидеть бессмысленность желания. Используй парадоксы, образность, метафоры, наблюдения."
+}
 
-module.exports = async (req, res) => {
-  if (req.method !== "POST" || req.query.secret !== WEBHOOK_SECRET) {
-    return res.status(403).send("Forbidden");
+module.exports = async function (req, res) {
+  if (req.method !== 'POST' || req.query.secret !== WEBHOOK_SECRET) {
+    return res.status(403).send('Forbidden')
   }
 
-  const message = req.body?.message?.text;
-  const chatId = req.body?.message?.chat?.id?.toString();
+  const message = req.body?.message?.text
+  const chatId = req.body?.message?.chat?.id?.toString()
 
-  if (!message || !chatId) return res.status(400).send("Bad Request");
+  if (!message || !chatId) return res.status(400).send('Bad Request')
 
-  const command = message.trim().toLowerCase();
+  const command = message.trim().toLowerCase()
 
   if (!sessions.has(chatId)) {
     sessions.set(chatId, {
-      persona: "soft",
+      persona: 'soft',
       messages: [],
       totalSaved: 0,
       relapses: 0,
-      totalSavedAmount: 0,
-      pendingPrice: false
-    });
+      savedMoney: 0
+    })
   }
 
-  const session = sessions.get(chatId);
+  const session = sessions.get(chatId)
 
-  // === PRICE ENTRY ===
-  if (session.pendingPrice) {
-    const price = parseFloat(message.replace(/[^\d.]/g, ""));
-    if (!isNaN(price)) {
-      session.totalSavedAmount += price;
-      session.pendingPrice = false;
-      await sendMessage(chatId, `💰 Отлично! Записал: ты сэкономил ${price} ₽.`);
+  if (command === '/start') {
+    await sendMessage(chatId, "Привет! Я помогу тебе не делать импульсивные покупки. Напиши, что хочешь купить.")
+    return res.status(200).send('ok')
+  }
+
+  if (command === '/persona') {
+    await sendMessage(chatId, "Выбери стиль:\n/strict — строгий\n/soft — мягкий\n/troll — тролль\n/wise — мудрец")
+    return res.status(200).send('ok')
+  }
+
+  if (['/strict', '/soft', '/troll', '/wise'].includes(command)) {
+    session.persona = command.replace('/', '')
+    await sendMessage(chatId, `✅ Стиль сменён на: ${session.persona}`)
+    return res.status(200).send('ok')
+  }
+
+  if (command === '/done') {
+    session.totalSaved += 1
+    session.messages = []
+    await sendMessage(chatId, "👏 Круто! Я знал, что ты справишься. Запишем победу.")
+    return res.status(200).send('ok')
+  }
+
+  if (command === '/buy' || command === '/я купил') {
+    session.relapses += 1
+    session.messages = []
+    await sendMessage(chatId, "😔 Бывает. Но в следующий раз удержимся! Напиши, сколько потратил(а).")
+    session.awaitingAmount = true
+    return res.status(200).send('ok')
+  }
+
+  if (command === '/stats') {
+    await sendMessage(chatId, `📊 Ты удержался от ${session.totalSaved} покупок\n💸 Потратил: $${session.savedMoney.toFixed(2)}\n😅 Сорвался: ${session.relapses} раз(а)`)
+    return res.status(200).send('ok')
+  }
+
+  // если ждём сумму после /buy
+  if (session.awaitingAmount) {
+    const amount = parseFloat(message.replace(/[^0-9.]/g, ''))
+    if (!isNaN(amount)) {
+      session.savedMoney += amount
+      session.awaitingAmount = false
+      await sendMessage(chatId, `💾 Сохранил: $${amount.toFixed(2)}. Будем внимательнее в следующий раз!`)
     } else {
-      await sendMessage(chatId, "Не понял, сколько стоила вещь? Напиши сумму в формате: 999");
+      await sendMessage(chatId, "❓ Я не понял сумму. Напиши просто число, например: 35.99")
     }
-    return res.status(200).send("ok");
+    return res.status(200).send('ok')
   }
 
-  // === COMMANDS ===
-  if (command === "/start") {
-    await sendMessage(chatId, "Привет! Я помогу тебе не делать импульсивные покупки. Напиши, что хочешь купить.");
-    return res.status(200).send("ok");
-  }
-
-  if (command === "/done") {
-    session.totalSaved += 1;
-    session.messages = [];
-    session.pendingPrice = true;
-    await sendMessage(chatId, "👏 Молодец! А сколько стоила эта вещь?");
-    return res.status(200).send("ok");
-  }
-
-  if (command === "/buy" || command === "/я купил") {
-    session.relapses += 1;
-    session.messages = [];
-    await sendMessage(chatId, "😔 Понимаю. В следующий раз справимся вместе!");
-    return res.status(200).send("ok");
-  }
-
-  if (command === "/persona") {
-    await sendMessage(chatId, "Выбери стиль:
-/strict — строгий
-/soft — мягкий
-/troll — тролль
-/wise — мудрец");
-    return res.status(200).send("ok");
-  }
-
-  if (["/strict", "/soft", "/troll", "/wise"].includes(command)) {
-    session.persona = command.replace("/", "");
-    await sendMessage(chatId, `✅ Стиль сменён на: ${session.persona}`);
-    return res.status(200).send("ok");
-  }
-
-  if (command === "/stats") {
-    await sendMessage(
-      chatId,
-      `📊 Статистика:
-✅ Удержался: ${session.totalSaved} раз(а)
-💸 Сэкономлено: ${session.totalSavedAmount} ₽
-😅 Поддался: ${session.relapses} раз(а)`
-    );
-    return res.status(200).send("ok");
-  }
-
-  // === CONVERSATION ===
-  const personaPrompt = personas[session.persona];
+  // обычный диалог — отговариваем
+  const personaPrompt = personas[session.persona]
   if (session.messages.length === 0) {
-    session.messages.push({ role: "user", content: `Хочу купить: ${message}` });
+    session.messages.push({ role: 'user', content: `Хочу купить: ${message}` })
   } else {
-    session.messages.push({ role: "user", content: message });
+    session.messages.push({ role: 'user', content: message })
   }
 
-  const fullPrompt = [{ role: "system", content: personaPrompt }, ...session.messages];
+  const fullPrompt = [
+    { role: 'system', content: personaPrompt },
+    ...session.messages
+  ]
 
   const completion = await openai.chat.completions.create({
     model: "gpt-4o",
     messages: fullPrompt
-  });
+  })
 
-  const reply = completion.choices[0].message?.content ?? "🤔 Хм...";
-  session.messages.push({ role: "assistant", content: reply });
+  const reply = completion.choices[0].message.content || "🤔 Что-то я задумался..."
+  session.messages.push({ role: 'assistant', content: reply })
 
-  await sendMessage(chatId, reply);
-  res.status(200).send("ok");
-};
+  await sendMessage(chatId, reply)
+  res.status(200).send('ok')
+}
 
 async function sendMessage(chatId, text) {
   await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id: chatId, text })
-  });
+  })
 }
