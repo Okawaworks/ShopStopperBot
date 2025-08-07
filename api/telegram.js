@@ -1,43 +1,34 @@
-const TelegramBot = require("node-telegram-bot-api");
+const fetch = require("node-fetch");
 
 const botToken = process.env.TELEGRAM_TOKEN;
-if (!botToken) throw new Error("TELEGRAM_TOKEN is not set!");
-
-let bot = global._telegramBot;
-if (!bot) {
-  bot = new TelegramBot(botToken, { webHook: true });
-  global._telegramBot = bot;
-  console.log("TelegramBot создан");
-}
-
-bot.on("message", async (msg) => {
-  const chatId = msg.chat.id;
-  const userMessage = msg.text;
-  console.log("Получено сообщение:", { chatId, userMessage });
-
-  if (!userMessage) {
-    console.log("Нет текста в сообщении, игнорируем.");
-    return;
-  }
-
-  try {
-    const res = await bot.sendMessage(chatId, "Бот работает! Ваше сообщение получено: " + userMessage);
-    console.log("Ответ отправлен! Ответ от Telegram:", res);
-  } catch (e) {
-    // Выводим всю ошибку и тело ответа Telegram
-    if (e.response && e.response.body) {
-      console.error("Ошибка отправки:", e.response.body);
-    } else {
-      console.error("Ошибка отправки:", e);
-    }
-  }
-});
 
 module.exports = async (req, res) => {
   try {
     console.log("Webhook вызван:", req.method, req.url);
     if (req.method === "POST") {
-      await bot.processUpdate(req.body);
+      const body = req.body;
+      console.log("Получено тело:", body);
+      if (body && body.message && body.message.chat && body.message.text) {
+        const chatId = body.message.chat.id;
+        const userMessage = body.message.text;
+        console.log("Получено сообщение:", { chatId, userMessage });
+
+        // Формируем ответ
+        const responseText = "Vercel + fetch: ваше сообщение получено: " + userMessage;
+
+        // Отправляем сообщение через Telegram API напрямую
+        const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+        const tgRes = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: responseText,
+          }),
+        });
+        const data = await tgRes.json();
+        console.log("Ответ Telegram (fetch):", data);
+      }
       res.status(200).send("ok");
     } else {
       res.status(200).send("Bot is running (webhook model)");
