@@ -22,7 +22,7 @@ module.exports = async (req, res) => {
         const userMessage = body.message.text.trim();
 
         // --- Статистика покупок через Supabase ---
-        if (userMessage === "/купил") {
+        if (userMessage === "/kupil") {
           await sendTelegram(chatId, "На какую сумму купили?");
           await supabase
             .from('user_stats')
@@ -65,7 +65,7 @@ module.exports = async (req, res) => {
         }
 
         // /стата — показать статистику
-        if (userMessage === "/стата" || userMessage === "/stats") {
+        if (userMessage === "/stats" || userMessage === "/stats") {
           if (!userRow) {
             await sendTelegram(chatId, "Пока нет данных о покупках.");
           } else {
